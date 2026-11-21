@@ -1,0 +1,5 @@
+PySide6>=6.6
+psutil>=5.9
+# requests is optional: genlogin_api.py uses only the standard library
+# (urllib) so scripts/test_connection.py works without any install.
+# requests>=2.31

@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+data/app.db
+data/*.db
+logs/
+screenshots/
+exports/
+*.log
+dist/
+build/
+*.spec
+.venv/
+venv/
+config/settings.local.json
+# Never commit tokens / secrets
+.env
+*.pem
+*.key
