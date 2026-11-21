@@ -28,6 +28,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body))); self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        from urllib.parse import urlparse, parse_qs
+        u = urlparse(self.path)
+        if u.path == "/token":
+            length = int(self.headers.get("Content-Length") or 0)
+            fields = parse_qs(self.rfile.read(length).decode())
+            if fields.get("username") and fields.get("password"):
+                return self._json({"access_token": "mock-token-123",
+                                   "token_type": "bearer"})
+            return self._json({"detail": "missing credentials"}, 422)
+        return self._json({"success": False, "message": "unknown path"}, 404)
+
     def do_GET(self):
         from urllib.parse import urlparse, parse_qs
         u = urlparse(self.path)

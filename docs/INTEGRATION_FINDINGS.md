@@ -67,6 +67,20 @@ which cites the GenLogin Profile API reference at docs.genlogin.com.
   with the legacy paths only as fallback after a 404. Mock server
   now 404s `/profiles` (no slash) like real 4.5.4, and serves the
   official paths.
+- **TOKEN REQUIRED (docs.genlogin.com, confirmed 2026-11-21):**
+  `GET /profiles/` is marked OAuth2PasswordBearer REQUIRED,
+  tokenUrl "/token" — i.e. `POST http://localhost:55550/token`.
+  Without a token, 4.5.4 returns 404 "Endpoint not found" (it hides
+  the endpoint; no 401 is documented). The docs do NOT list the
+  /token request fields, and the OpenAPI file backendgenlogin.json
+  is 404, so the exact /token body is UNCONFIRMED. The standard
+  FastAPI OAuth2 password shape is assumed by
+  `scripts/get_token.py`: form `grant_type=password`,
+  `username=<GenLogin account email>`, `password=<account password>`.
+  That script prompts on the user's PC only, never prints/saves the
+  token or password, and only reports the profile count. If /token
+  rejects that shape, report its HTTP status/body (redacted) and
+  adjust — do NOT send the password anywhere else.
 
 ## UNKNOWN / NOT VERIFIED — do not assume
 
