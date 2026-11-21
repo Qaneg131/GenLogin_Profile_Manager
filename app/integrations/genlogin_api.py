@@ -1,13 +1,25 @@
 """GenLogin Local API adapter — stdlib only (urllib), no extra deps.
 
-Confirmed (public docs, see docs/INTEGRATION_FINDINGS.md):
-  GET {base}/profiles?offset=&limit=   list (limit capped at 100)
-  GET {base}/profiles/{id}            one profile
-  GET {base}/profiles/start/{id}      start (send.win; path shifted
-                                      between 2.x/3.0 — fallback below)
-  GET {base}/profiles/stop/{id}       stop (explicit user request only)
-  GET {base}/profiles/running  (or getProfilesRunning) — running list
-  GET {base}/api-docs                 Swagger
+Confirmed from OFFICIAL docs (docs.genlogin.com, checked 2026-11-21,
+GenLogin 4.5.4 on the user's PC — root GET / returns "GenLogin 4.5.4"):
+  GET {base}/profiles/            list (offset default 0, limit default 20,
+                                  max 100) — NOTE trailing slash.
+                                  Returns {success, data: {user_id,
+                                  lst_profile: [{id, user_id, profile_data,
+                                  name?, group_id?, status, total}],
+                                  total}}
+  GET {base}/profiles/{id}/start  start a profile (runProfile)
+  GET {base}/profiles/{id}/stop   stop (explicit user request only)
+  POST {base}/profiles/           create (NOT used by this app)
+  DELETE {base}/profiles/{id}     delete (NOT used by this app — never
+                                  delete profiles)
+  Auth: OAuth2PasswordBearer, tokenUrl "/token" — send
+  "Authorization: Bearer <token>". Token comes only from the
+  GENLOGIN_TOKEN env var, never hardcoded/stored in code.
+  There is NO /api-docs on 4.5.4 (GET /api-docs -> 404 "Endpoint not
+  found"), and GET /profiles (no trailing slash) -> 404 on 4.5.4.
+  Legacy fallbacks (/profiles/start/{id}, /profiles/stop/{id}) are
+  tried only after the official path 404s, for older builds.
 
 NOT implemented: any browser-version update call — no documented
 endpoint exists (see VersionService). Do not guess one here.
@@ -63,18 +75,20 @@ class GenLoginApi:
 
     # -- read-only -----------------------------------------------------
     def test_connection(self) -> dict:
-        """Read-only probe: GET /profiles?limit=1. Returns status info."""
+        """Read-only probe: GET /profiles/?limit=1. Returns status info."""
         try:
-            payload = self._request("GET", "/profiles", {"limit": 1, "offset": 0})
+            payload = self._request("GET", "/profiles/", {"limit": 1, "offset": 0})
             data = self._unwrap(payload)
             total = (data.get("pagination") or {}).get("total")
+            if total is None:
+                total = data.get("total")
             return {"ok": True, "base_url": self.base_url,
                     "total": total, "raw_keys": sorted(data.keys())[:20]}
         except GenLoginApiError as e:
             return {"ok": False, "base_url": self.base_url, "error": str(e)}
 
     def list_profiles(self, offset: int = 0, limit: int = 100) -> tuple[list[Profile], dict]:
-        payload = self._request("GET", "/profiles", {"offset": offset, "limit": limit})
+        payload = self._request("GET", "/profiles/", {"offset": offset, "limit": limit})
         data = self._unwrap(payload)
         raw = data.get("lst_profile") or data.get("profiles") or []
         if isinstance(payload, list):
@@ -93,21 +107,22 @@ class GenLoginApi:
         return out
 
     def get_profile(self, profile_id: str) -> Optional[Profile]:
-        payload = self._request("GET", f"/profiles/{profile_id}")
-        data = self._unwrap(payload)
-        return Profile.from_api(data) if data else None
-
-    def list_running(self) -> list[Profile]:
-        for path in ("/profiles/running", "/profiles-running"):
+        for path in (f"/profiles/{profile_id}/", f"/profiles/{profile_id}"):
             try:
                 payload = self._request("GET", path)
-                data = self._unwrap(payload)
-                raw = data.get("lst_profile") or data.get("profiles") or data.get("data") or []
-                if isinstance(raw, list):
-                    return [Profile.from_api(p) for p in raw if isinstance(p, dict)]
-            except GenLoginApiError:
-                continue
-        # Fallback: running flag on the full list (slower, but documented fields only)
+            except GenLoginApiError as e:
+                if "HTTP 404" in str(e):
+                    continue
+                raise
+            data = self._unwrap(payload)
+            return Profile.from_api(data) if data else None
+        return None
+
+    def list_running(self) -> list[Profile]:
+        # No running-list endpoint in the official 4.5.4 docs; the list
+        # response carries a status/is_running field per profile.
+        # Fallback: running flag on the full list (slower, documented
+        # fields only).
         return [p for p in self.list_all_profiles() if p.running]
 
     def is_running(self, profile_id: str) -> bool:
@@ -115,10 +130,13 @@ class GenLoginApi:
 
     # -- launch (OPEN ONLY: read/launch only, never edits settings) ----
     def run_profile(self, profile_id: str) -> dict:
-        """Start a profile. Tries documented start path, then legacy run path.
+        """Start a profile. Official path first
+        (GET /profiles/{id}/start), legacy path only as fallback.
         Returns the raw payload incl. wsEndpoint when present."""
         last_err = None
-        for path in (f"/profiles/start/{profile_id}", f"/profiles/run/{profile_id}"):
+        for path in (f"/profiles/{profile_id}/start",
+                     f"/profiles/start/{profile_id}",
+                     f"/profiles/run/{profile_id}"):
             try:
                 return self._request("GET", path)
             except GenLoginApiError as e:
@@ -128,5 +146,15 @@ class GenLoginApi:
         raise last_err or GenLoginApiError(f"Could not start profile {profile_id}")
 
     def stop_profile(self, profile_id: str) -> dict:
-        """Explicit stop only — the app never calls this automatically."""
-        return self._request("GET", f"/profiles/stop/{profile_id}")
+        """Explicit stop only — the app never calls this automatically.
+        Official path GET /profiles/{id}/stop, legacy fallback."""
+        last_err = None
+        for path in (f"/profiles/{profile_id}/stop",
+                     f"/profiles/stop/{profile_id}"):
+            try:
+                return self._request("GET", path)
+            except GenLoginApiError as e:
+                last_err = e
+                if "HTTP 404" not in str(e):
+                    raise
+        raise last_err or GenLoginApiError(f"Could not stop profile {profile_id}")

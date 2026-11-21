@@ -39,6 +39,35 @@ which cites the GenLogin Profile API reference at docs.genlogin.com.
 - A script on another machine cannot reach the local API: the caller
   must run on the same Windows PC as GenLogin.
 
+## UPDATE 2026-11-21 — GenLogin 4.5.4 on the user's PC (LIVE, verified by user)
+
+- Root `GET http://localhost:55550/` returns plain text `GenLogin 4.5.4`.
+- `GET /profiles` (no trailing slash) -> `404 {"success":false,"status":404,"message":"Endpoint not found"}`
+- `GET /api-docs` -> same 404. There is NO Swagger on 4.5.4.
+- `GET http://127.0.0.1:8787/profiles` -> `404 {"error":"khong co route"}` — a
+  different local service, NOT GenLogin. 8787 is not GenLogin's port.
+- Official docs at docs.genlogin.com (checked 2026-11-21, llms.txt +
+  genlogin-api/profile-api pages) confirm the CURRENT paths:
+  - `GET /profiles/` — list, query offset (default 0), limit (default 20,
+    max 100). Response `{success, data: {user_id, lst_profile: [{id,
+    user_id, profile_data, name?, group_id?, status, total}], total}}`
+  - `POST /profiles/` — create
+  - `GET /profiles/{profile_id}/start` — run profile
+  - `GET /profiles/{profile_id}/stop` — stop profile
+  - `DELETE /profiles/{profile_id}` — delete (never used by this app)
+  - Auth: OAuth2PasswordBearer, tokenUrl "/token", header
+    `Authorization: Bearer <token>`. Token only from `GENLOGIN_TOKEN`
+    env var. Where the token is issued in the GenLogin 4.5.4 app / how
+    /token is called is STILL UNCONFIRMED — do not send the user's
+    GenLogin password anywhere; ask how they obtain a token, or try
+    the list endpoint first without a token (some builds accept it).
+- Consequence: the first build used the WRONG paths
+  (`/profiles`, `/profiles/start/{id}`, `/profiles/stop/{id}`) from
+  secondary guides. Fixed 2026-11-21 to the official paths above,
+  with the legacy paths only as fallback after a 404. Mock server
+  now 404s `/profiles` (no slash) like real 4.5.4, and serves the
+  official paths.
+
 ## UNKNOWN / NOT VERIFIED — do not assume
 
 - **Port 8787 is NOT confirmed as GenLogin's port.** No public search

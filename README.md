@@ -38,9 +38,10 @@ python -m app.main
 python scripts/test_connection.py
 python scripts/test_connection.py http://localhost:55550/
 ```
-Also open in a browser on that PC: `http://127.0.0.1:8787/` and
-`http://127.0.0.1:8787/api-docs` — paste what you see back if the update
-endpoint is listed there.
+Also open in a browser on that PC: `http://localhost:55550/` — it should
+say `GenLogin 4.5.4`. (There is NO `/api-docs` on 4.5.4; it 404s.)
+If the list call still 404s, the API may need a Bearer token — see
+`docs/INTEGRATION_FINDINGS.md` (token from `GENLOGIN_TOKEN` env var only).
 
 ## Tests (mock only — NOT live GenLogin)
 ```bat

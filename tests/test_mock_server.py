@@ -31,33 +31,39 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         from urllib.parse import urlparse, parse_qs
         u = urlparse(self.path)
+        # Official 4.5.4 list path is /profiles/ WITH trailing slash;
+        # /profiles without it 404s on real GenLogin 4.5.4, so mock it too.
         if u.path == "/profiles":
+            return self._json({"success": False, "status": 404,
+                               "message": "Endpoint not found"}, 404)
+        if u.path == "/profiles/":
             q = parse_qs(u.query)
             off = int(q.get("offset", ["0"])[0]); lim = int(q.get("limit", ["100"])[0])
-            page = PROFILES[off:off + lim]
+            page = []
+            for x in PROFILES[off:off + lim]:
+                y = dict(x); y["is_running"] = x["id"] in RUNNING; page.append(y)
             return self._json({"success": True, "data": {
+                "user_id": 1, "total": len(PROFILES),
                 "lst_profile": page,
                 "pagination": {"total": len(PROFILES), "offset": off, "limit": lim}}})
-        if u.path.startswith("/profiles/start/"):
-            pid = u.path.rsplit("/", 1)[-1]
+        if u.path.endswith("/start"):
+            pid = u.path.split("/")[2]
             RUNNING.add(pid)
             return self._json({"success": True, "data": {
                 "wsEndpoint": f"ws://127.0.0.1:53412/devtools/browser/{pid}"}})
-        if u.path.startswith("/profiles/stop/"):
-            RUNNING.discard(u.path.rsplit("/", 1)[-1])
+        if u.path.endswith("/stop"):
+            RUNNING.discard(u.path.split("/")[2])
             return self._json({"success": True})
-        if u.path == "/profiles/running":
-            return self._json({"success": True, "data": {"lst_profile": [
-                p for p in PROFILES if p["id"] in RUNNING]}})
         if u.path.startswith("/profiles/"):
-            pid = u.path.rsplit("/", 1)[-1]
+            pid = u.path.rstrip("/").rsplit("/", 1)[-1]
             p = next((x for x in PROFILES if x["id"] == pid), None)
             if p:
                 p = dict(p); p["is_running"] = pid in RUNNING
                 return self._json({"success": True, "data": p})
             return self._json({"success": False, "message": "not found"}, 404)
         if u.path == "/api-docs":
-            return self._json({"mock": "swagger placeholder"})
+            return self._json({"success": False, "status": 404,
+                               "message": "Endpoint not found"}, 404)
         return self._json({"success": False, "message": "unknown path"}, 404)
 
 
