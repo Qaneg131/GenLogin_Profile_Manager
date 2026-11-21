@@ -81,6 +81,18 @@ which cites the GenLogin Profile API reference at docs.genlogin.com.
   token or password, and only reports the profile count. If /token
   rejects that shape, report its HTTP status/body (redacted) and
   adjust — do NOT send the password anywhere else.
+  LIVE UPDATE 2026-11-21 ~10:31: POST /token on the user's PC
+  ALSO returns 404 "Endpoint not found" — /token does not exist
+  on the local 4.5.4 server at all. It is a cloud-backend endpoint
+  in the docs' OpenAPI spec, not a local one. A wrong password
+  would give 401/422, never 404, so this is not a password error.
+  No public source found says where a local-API token is issued
+  (in-app Settings/API, genlogin.com dashboard, or plan-gated —
+  old HackMD says "API support from mini-plan"). Next step is
+  scripts/probe_api.py: read-only GET probe of ~20 candidate
+  paths + netstat for port 55550, to tell 404-everywhere (API off
+  / not in this build or plan) apart from 401 (endpoint exists,
+  needs a real token) apart from a different live prefix.
 
 ## UNKNOWN / NOT VERIFIED — do not assume
 
