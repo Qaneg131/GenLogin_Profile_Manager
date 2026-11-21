@@ -93,6 +93,19 @@ which cites the GenLogin Profile API reference at docs.genlogin.com.
   paths + netstat for port 55550, to tell 404-everywhere (API off
   / not in this build or plan) apart from 401 (endpoint exists,
   needs a real token) apart from a different live prefix.
+- **PROBE RESULT (user's PC, 2026-11-21 ~10:41):** port 55550 is
+  owned by GenLogin.exe PID 16220 — confirmed GenLogin's server.
+  GET / = 200 "GenLogin 4.5.4"; EVERY other path GET without auth
+  = 404. But GET /profiles/ WITH a dummy Bearer token returns
+  **500 "Invalid token specified: Cannot read properties of
+  undefined (reading 'replace')"** — so /profiles/ EXISTS and is
+  gated by token auth; no token = 404, bad token = 500. The token
+  is therefore a real one (likely a JWT from GenLogin's cloud
+  backend, whose spec is at backend.genlogin.com/openapi.json).
+  scripts/get_token.py now POSTs to
+  https://backend.genlogin.com/token FIRST, then falls back to
+  local /token, and tests the returned token against local
+  /profiles/. Awaiting the user's run of the updated script.
 
 ## UNKNOWN / NOT VERIFIED — do not assume
 

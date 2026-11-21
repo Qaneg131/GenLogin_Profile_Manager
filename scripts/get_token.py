@@ -1,24 +1,30 @@
-"""Get a GenLogin Bearer token LOCALLY, then test GET /profiles/ with it.
+"""Get a GenLogin Bearer token, then test GET /profiles/ with it.
 
 Why this exists: official docs (docs.genlogin.com, Profile API) mark
 GET /profiles/ as OAuth2PasswordBearer REQUIRED, tokenUrl "/token".
-Without a token, GenLogin 4.5.4 returns 404 "Endpoint not found" —
-it hides the endpoint instead of returning 401.
+On the user's PC, GET /profiles/ with NO token returns 404, but
+with a (dummy) Bearer token it returns 500 "Invalid token
+specified" — so the endpoint EXISTS and is gated by token auth.
 
-How it works (all on YOUR PC, nothing is sent to anyone else):
-  1. Prompts for your GenLogin account email + password (password is
-     hidden with getpass, never printed, never written to disk).
-  2. POSTs them as form data to http://localhost:55550/token
-     (standard FastAPI OAuth2 password flow:
-     grant_type=password, username=..., password=...).
-     If that shape is wrong for your build, it prints the server's
-     status/body (with any token redacted) so we can adjust — it does
-     NOT guess further or retry with other credentials.
-  3. If a token comes back, it calls GET /profiles/ with
-     "Authorization: Bearer <token>" and prints only the profile
-     count + first profile names. It NEVER prints the token itself.
-  4. It tells you the exact PowerShell command to set GENLOGIN_TOKEN
-     for the current session, so the app / test_connection.py can use
+Key correction (2026-11-21): /token does NOT exist on the LOCAL
+server (POST http://localhost:55550/token -> 404). The tokenUrl in
+the docs belongs to GenLogin's CLOUD backend, whose OpenAPI spec
+lives at https://backend.genlogin.com/openapi.json — so this script
+POSTs the credentials to https://backend.genlogin.com/token FIRST
+(standard OAuth2 password flow), and only falls back to the local
+/token afterwards. The returned token is then used against the
+LOCAL server http://localhost:55550/profiles/.
+
+How it works (credentials stay on YOUR PC; the password is never
+printed or written to disk, and the token is never printed):
+  1. Prompts for your GenLogin account email + password (hidden).
+  2. POSTs them as form data (grant_type=password, username=...,
+     password=...) to the token URL(s) above.
+  3. If a token comes back, calls GET /profiles/ on the local
+     server with "Authorization: Bearer <token>" and prints only
+     the profile count + first profile names.
+  4. Tells you the PowerShell command to set GENLOGIN_TOKEN for
+     the current session, so the app / test_connection.py can use
      it. The token is NOT saved to any file by this script.
 
 Run on the PC where GenLogin runs:
@@ -38,8 +44,7 @@ from app.integrations.genlogin_api import GenLoginApi  # noqa: E402
 from app.core.models import redact  # noqa: E402
 
 
-def post_token(base, username, password):
-    url = base.rstrip("/") + "/token"
+def post_token(url, username, password):
     body = urllib.parse.urlencode({
         "grant_type": "password",
         "username": username,
@@ -52,11 +57,27 @@ def post_token(base, username, password):
             return json.loads(r.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8", "replace")[:500]
-        print(f"/token returned HTTP {e.code}: {redact(raw)}")
+        print(f"{url} returned HTTP {e.code}: {redact(raw)}")
         return None
     except Exception as e:  # noqa: BLE001
         print(f"Could not reach {url}: {e}")
         return None
+
+
+def get_token(username, password, local_base):
+    """Try the cloud backend first, then the local server."""
+    for url in ("https://backend.genlogin.com/token",
+                local_base.rstrip("/") + "/token"):
+        print(f"Trying {url} ...")
+        data = post_token(url, username, password)
+        if data:
+            token = data.get("access_token") or data.get("token")
+            if token:
+                print(f"Token received from {url} (not shown).")
+                return token
+            print(f"{url} answered but gave no access_token field.")
+            print(f"Response keys: {sorted(data.keys())}")
+    return None
 
 
 def main():
@@ -64,23 +85,19 @@ def main():
         "GENLOGIN_BASE_URL", "http://localhost:55550/")
     print(f"Base URL: {base}")
     print("This will ask for your GenLogin account email/password.")
-    print("They are used ONLY for this one POST to localhost, on this PC.")
+    print("They are sent ONLY to GenLogin's own token endpoint")
+    print("(https://backend.genlogin.com/token, then localhost as fallback).")
     username = input("GenLogin email / username: ").strip()
     password = getpass.getpass("GenLogin password (hidden): ")
     if not username or not password:
         print("Cancelled — no username/password entered.")
         return 1
-    data = post_token(base, username, password)
-    if not data:
+    token = get_token(username, password, base)
+    if not token:
         print("\nNo token received. Do NOT paste your password anywhere —")
         print("tell me the HTTP status above and I will adjust the request.")
         return 1
-    token = data.get("access_token") or data.get("token")
-    if not token:
-        print("\n/token answered but gave no access_token field.")
-        print(f"Response keys: {sorted(data.keys())}")
-        return 1
-    print("\nToken received (not shown). Testing GET /profiles/ with it...")
+    print("\nTesting GET /profiles/ on the local server with it...")
     os.environ["GENLOGIN_TOKEN"] = token
     api = GenLoginApi(base, timeout=10)
     r = api.test_connection()
